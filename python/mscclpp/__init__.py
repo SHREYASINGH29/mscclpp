@@ -6,6 +6,7 @@ import os as _os
 from ._mscclpp import (
     Communicator,
     Connection,
+    DeviceSyncer,
     EndpointConfig,
     Fifo,
     Host2DeviceSemaphore,

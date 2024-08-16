@@ -10,9 +10,7 @@ from mscclpp_op import (
     MscclppAllReduce5,
     MscclppAllReduce6,
 )
-from nccl_op import NcclAllReduce
 from mpi4py import MPI
-import cupy.cuda.nccl as nccl
 import mscclpp.comm as mscclpp_comm
 from mscclpp import ProxyService, is_nvls_supported
 from prettytable import PrettyTable
@@ -159,7 +157,7 @@ def find_best_config(mscclpp_call, niter):
 
 
 def run_benchmark(
-    mscclpp_group: mscclpp_comm.CommGroup, nccl_op: nccl.NcclCommunicator, table: PrettyTable, niter: int, nelem: int
+    mscclpp_group: mscclpp_comm.CommGroup, nccl_op, table: PrettyTable, niter: int, nelem: int
 ):
     memory = cp.zeros(nelem, dtype=data_type)
     memory_out = cp.zeros(nelem, dtype=data_type)
@@ -167,20 +165,9 @@ def run_benchmark(
 
     proxy_service = ProxyService()
     if MPI.COMM_WORLD.size // N_GPUS_PER_NODE == 1:
-        if memory.nbytes < 2**20:
-            mscclpp_algos = [MscclppAllReduce2(mscclpp_group, memory, memory_out)]
-        else:
-            mscclpp_algos = [
-                MscclppAllReduce1(mscclpp_group, memory),
-                MscclppAllReduce3(mscclpp_group, memory, proxy_service),
-            ]
-            if is_nvls_supported():
-                mscclpp_algos.append(MscclppAllReduce6(mscclpp_group, nelem, data_type))
-    else:
-        if memory.nbytes < 2**22:
-            mscclpp_algos = [MscclppAllReduce5(mscclpp_group, memory, memory_out, N_GPUS_PER_NODE, proxy_service)]
-        else:
-            mscclpp_algos = [MscclppAllReduce4(mscclpp_group, memory, N_GPUS_PER_NODE, proxy_service)]
+        mscclpp_algos = [
+            MscclppAllReduce1(mscclpp_group, memory)
+        ]
 
     proxy_service.start_proxy()
     MPI.COMM_WORLD.barrier()
@@ -188,7 +175,7 @@ def run_benchmark(
     if isinstance(mscclpp_call, MscclppAllReduce6):
         memory = mscclpp_call.get_memory()
 
-    nccl_call = NcclAllReduce(nccl_op, memory)
+    nccl_call = mscclpp_call #NcclAllReduce(nccl_op, memory)
 
     memory_nbytes = memory.nbytes
     mscclpp_time = bench_time(niter, mscclpp_call)
@@ -239,11 +226,11 @@ if __name__ == "__main__":
 
     # create a NcclComm
     if MPI.COMM_WORLD.rank == 0:
-        uid = nccl.get_unique_id()
+        uid = None # nccl.get_unique_id()
     else:
         uid = None
     uid = MPI.COMM_WORLD.bcast(uid, root=0)
-    nccl_comm = nccl.NcclCommunicator(MPI.COMM_WORLD.size, uid, MPI.COMM_WORLD.rank)
+    nccl_comm = None # nccl.NcclCommunicator(MPI.COMM_WORLD.size, uid, MPI.COMM_WORLD.rank)
 
     table = None
     if MPI.COMM_WORLD.rank == 0:
@@ -276,11 +263,12 @@ if __name__ == "__main__":
         if nelems * data_type().itemsize > 2**32:
             break  # due to trigger bit width limitation, we can only support up to 2**32
 
-        size, mscclpp_algBw, nccl_algBw, speed_up = run_benchmark(mscclpp_group, nccl_comm, table, 100, nelems)
+        size, mscclpp_algBw, nccl_algBw, speed_up = run_benchmark(mscclpp_group, nccl_comm, table, 10, nelems)
         sizes.append(size)
         mscclpp_algbw.append(mscclpp_algBw)
         nccl_algbw.append(nccl_algBw)
         speed_ups.append(speed_up)
+        break
 
     if MPI.COMM_WORLD.rank == 0:
         print()
