@@ -15,7 +15,6 @@
 #endif  // defined(MSCCLPP_DEVICE_COMPILE)
 
 namespace mscclpp {
-/// LL (low latency) protocol packet.
 union alignas(16) LL16Packet {
   // Assume data is written with an atomicity of 8 bytes (IB/RDMA).
   struct {

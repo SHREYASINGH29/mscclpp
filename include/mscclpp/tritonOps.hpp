@@ -26,7 +26,7 @@ constexpr cuda::memory_order memoryOrderRelaxed = cuda::memory_order_relaxed;
 constexpr cuda::memory_order memoryOrderAcquire = cuda::memory_order_acquire;
 
 template <typename T>
-__device__ void atomicStore(T* ptr, const T& val, cuda::memory_order memoryOrder) {
+__device__ __attribute__((always_inline)) void atomicStore(T* ptr, const T& val, cuda::memory_order memoryOrder) {
   cuda::atomic_ref<T, cuda::thread_scope_system>{*ptr}.store(val, memoryOrder);
 }
 
@@ -65,7 +65,7 @@ struct DeviceSyncer {
 };
 
 struct SmDevice2DeviceSemaphoreDeviceHandle {
-  __device__ void relaxedSignal() {
+  __device__ __attribute__((always_inline)) void relaxedSignal() {
     semaphoreIncrement();
     atomicStore(remoteInboundSemaphoreId, semaphoreGetLocal(), memoryOrderRelaxed);
     // printf("RT relaxed signal end\n");
@@ -78,7 +78,7 @@ struct SmDevice2DeviceSemaphoreDeviceHandle {
     // printf("RT wait end\n");
   }
 
-  __device__ void semaphoreIncrement() { *outboundSemaphoreId += 1; }
+  __device__ void __attribute__((always_inline)) semaphoreIncrement() { *outboundSemaphoreId += 1; }
   __device__ uint64_t semaphoreGetLocal() const { return *outboundSemaphoreId; }
 
   uint64_t* inboundSemaphoreId;
@@ -93,12 +93,12 @@ struct SmChannelDeviceHandle {
   void* dst_;
   void* getPacketBuffer_;
 
-  __device__ void relaxedSignal() { 
+  __device__ __attribute__((used)) void relaxedSignal() { 
       // printf("RT relaxed signal start %p\n", this);
       semaphore_.relaxedSignal(); 
   }
 
-  __device__ void wait(int64_t maxSpinCount = 10000000) { 
+  __device__ __attribute((used)) void wait(int64_t maxSpinCount = 10000000) { 
       // printf("RT wait start %p\n", this);
       semaphore_.wait(maxSpinCount); 
   }
@@ -107,7 +107,7 @@ struct SmChannelDeviceHandle {
     return *(reinterpret_cast<int4*>(dst_) + index);
   }
   
-  __device__ float read(uint64_t index) {
+  __device__ __attribute((used)) float read(uint64_t index) {
     /* printf("RT read on %lu got %f at %lu \n", index, *(reinterpret_cast<float*>(dst_) + index), dst_); */
     return *(reinterpret_cast<float*>(dst_) + index);
   }
@@ -116,7 +116,7 @@ struct SmChannelDeviceHandle {
     *(reinterpret_cast<int4*>(dst_) + index) = v;
   }
 
-  __device__ void write(uint64_t index, const float v) {
+  __device__ __attribute((used)) void write(uint64_t index, const float v) {
     /* printf("RT write %lu <= %f at %lu\n", index, v, dst_); */
     *(reinterpret_cast<float*>(dst_) + index) = v;
   }
@@ -175,23 +175,77 @@ struct SmChannelDeviceHandle {
                                    numThreads);
   }
 
-  __device__ void get(uint64_t offset, uint64_t bytes, uint32_t threadId, uint32_t numThreads) {
+  __device__ __attribute((used)) void get(uint64_t offset, uint64_t bytes, uint32_t threadId, uint32_t numThreads) {
     get_helper(offset, offset, bytes, threadId, numThreads);
   }
 
 
 };
 
+union alignas(16) LL16Packet {
+  struct {
+    uint32_t data1;
+    uint32_t flag1;
+    uint32_t data2;
+    uint32_t flag2;
+  };
+  using Payload = uint2;
+
+  ulonglong2 raw_;
+
+  __device__ LL16Packet() {}
+
+  __device__ LL16Packet(uint2 val, uint32_t flag) {
+    data1 = val.x;
+    flag1 = flag;
+    data2 = val.y;
+    flag2 = flag;
+  }
+
+  __device__ void write(uint32_t val1, uint32_t val2, uint32_t flag) {
+    asm volatile("st.volatile.global.v4.u32 [%0], {%1,%2,%3,%4};" ::"l"(&raw_), "r"(val1), "r"(flag), "r"(val2),
+                 "r"(flag));
+  }
+
+  __device__ void write(uint64_t val, uint32_t flag) { write((uint32_t)val, (uint32_t)(val >> 32), flag); }
+
+  __device__ bool readOnce(uint32_t flag, uint2& data) const {
+    uint32_t flag1, flag2;
+    asm volatile("ld.volatile.global.v4.u32 {%0,%1,%2,%3}, [%4];"
+                 : "=r"(data.x), "=r"(flag1), "=r"(data.y), "=r"(flag2)
+                 : "l"(&raw_));
+    return (flag1 != flag) || (flag2 != flag);
+  }
+
+  __device__ __attribute((used)) uint2 read(uint32_t flag, int64_t maxSpinCount = 100000000) const {
+    uint2 data;
+    POLL_MAYBE_JAILBREAK(readOnce(flag, data), maxSpinCount);
+    return data;
+  }
+
+  __device__ void clear() { raw_ = make_ulonglong2(0, 0); }
+};
+
+
 __device__ mscclpp::DeviceSyncer DS;
-__device__ int foo(){
+__device__ uint2 foo(){
     SmChannelDeviceHandle handle;
     handle.relaxedSignal();
     handle.wait();
+    handle.write(5, handle.read(3));
     DS.sync(99);
     bool mask[10];
     if (mask[0]) {
         handle.relaxedSignal();
     }
+	LL16Packet packet;
+	packet.write(1, 2, 3);
+	LL16Packet packet2;
+    packet.data1 = 1;
+    packet.flag1 = 2;
+    packet.data2 = 3;
+    packet.flag2 = 4;
+	return packet.read(3);
 }
 
 __global__ void bar(SmChannelDeviceHandle* SmChans){

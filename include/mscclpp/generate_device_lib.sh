@@ -1,4 +1,5 @@
 #!/bin/bash
 
-~/msr-project/llvm-project/build/bin/clang++ -O0 -x cuda -S -emit-llvm relaxed_signal.hpp --cuda-gpu-arch=sm_80
-~/msr-project/llvm-project/build/bin/opt relaxed_signal-cuda-nvptx64-nvidia-cuda-sm_80.bc -S -o relaxed_signal_cu_1.ll
+ROOT=/uufs/chpc.utah.edu/common/home/u1419864/vast/msr-project/
+
+$ROOT/llvm-project/build/bin/clang++ -O0 -x cuda -S -emit-llvm tritonOps.hpp --cuda-gpu-arch=sm_86 -D__NVCC__ --cuda-device-only -std=c++17 -o tritonOps-O0.ll

@@ -8,7 +8,6 @@ import cupy as cp
 from ._mscclpp import (
     Communicator,
     Connection,
-    DeviceSyncer,
     EndpointConfig,
     Host2DeviceSemaphore,
     Host2HostSemaphore,
@@ -142,9 +141,6 @@ class CommGroup:
             semaphores[rank] = semaphore_type(self.communicator, connections[rank])
         self.communicator.setup()
         return semaphores
-
-    def make_device_syncer(self) -> DeviceSyncer:
-        return DeviceSyncer()
 
     def make_sm_channels(self, tensor: cp.ndarray, connections: dict[int, Connection]) -> dict[int, SmChannel]:
         semaphores = self.make_semaphore(connections, SmDevice2DeviceSemaphore)
