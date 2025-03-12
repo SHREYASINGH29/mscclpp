@@ -12,6 +12,7 @@
 
 #define MSCCLPP_DEVICE_COMPILE
 #define MSCCLPP_DEVICE_INLINE __forceinline__ __device__
+// #define MSCCLPP_DEVICE_INLINE __attribute((used)) __device__
 #define MSCCLPP_HOST_DEVICE_INLINE __forceinline__ __host__ __device__
 #if defined(__HIP_PLATFORM_AMD__)
 #define MSCCLPP_DEVICE_HIP

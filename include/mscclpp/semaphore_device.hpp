@@ -57,8 +57,8 @@ struct SmDevice2DeviceSemaphoreDeviceHandle {
   /// Wait for the remote device to signal.
   MSCCLPP_DEVICE_INLINE void wait(int64_t maxSpinCount = 100000000) {
     (*expectedInboundSemaphoreId) += 1;
-    POLL_MAYBE_JAILBREAK((atomicLoad(inboundSemaphoreId, memoryOrderAcquire) < (*expectedInboundSemaphoreId)),
-                         maxSpinCount);
+    // POLL_MAYBE_JAILBREAK((atomicLoad(inboundSemaphoreId, memoryOrderAcquire) < (*expectedInboundSemaphoreId)),
+    //                      maxSpinCount);
   }
 
   /// Signal the remote device.

@@ -92,6 +92,8 @@ class KernelBuilder:
                 nvcc,
                 f"-std={std_version}",
                 "-ptx",
+                # "-O0",
+                "-lineinfo",
                 "-Xcompiler",
                 "-Wall,-Wextra",
                 f"-I{include_dir}",
