@@ -332,11 +332,10 @@ union alignas(16) LL16Packet {
   __device__ void clear() { raw_ = make_ulonglong2(0, 0); }
 };
 
-__device__ __attribute__((used)) LL16Packet createPacket(uint32_t val1, uint32_t val2, uint32_t flag) {
-  LL16Packet packet;
-  packet.write(val1, val2, flag);
-  return packet;
-}
+  __device__ __attribute__((used)) int64_t createPacketPtr(uint32_t val1, uint32_t val2, uint32_t flag) {
+    LL16Packet packet(make_uint2(val1, val2), flag);
+    return (int64_t)&packet;
+  }
 
 struct SmChannelDeviceHandle {
   SmDevice2DeviceSemaphoreDeviceHandle semaphore_;
@@ -419,9 +418,9 @@ __device__ __attribute((used)) void writeWrapperStride(uint32_t index, uint32_t 
     vec.w = val4;
 
     index = index / 4;
-    printf("Index: %u, Stride: %u\n", index, stride);
-    float4* arr_vec4 = reinterpret_cast<float4*>(dst_) + index;
-    arr_vec4[0] = vec;
+    //printf("Index: %u, Stride: %u\n", index, stride);
+    float4* arr_vec4 = reinterpret_cast<float4*>(dst_);
+    arr_vec4[index] = vec;
     
     // #pragma unroll
     // for (int i = 0; i < 4; ++i) {
@@ -446,10 +445,20 @@ __device__ __attribute((used)) void writeWrapperStride(uint32_t index, uint32_t 
     *(reinterpret_cast<float*>(dst_) + index) = v;
     // printf("WWW %lu\n", index2);
   }
+  
+  __device__ __attribute((used)) void write_scratch_packets(uint64_t index, float val1, float val2, int flag) {
+    LL16Packet packet(make_uint2(val1, val2), flag);
+    *(reinterpret_cast<LL16Packet*>(dst_) + index) = packet;
+  }
 
-  __device__ __attribute((used)) void writeInt4(uint64_t index, const LL16Packet v) {
+  __device__ __attribute((used)) void write_packet_wrapper(uint64_t index, uint64_t packet) {
+    LL16Packet* pkt = reinterpret_cast<LL16Packet*>(packet);
+    write_packet(index, pkt);
+  }
+
+  __device__ __attribute((used)) void write_packet(uint64_t index, const LL16Packet *v) {
     /* printf("RT write %lu <= %f at %lu\n", index, v, dst_); */
-    *(reinterpret_cast<LL16Packet*>(dst_) + index) = v;
+    *(reinterpret_cast<LL16Packet*>(dst_) + index) = *v;
     // printf("WWW %lu\n", index);
   }
 
@@ -547,7 +556,9 @@ __device__ uint2 foo(){
     packet.flag1 = 2;
     packet.data2 = 3;
     packet.flag2 = 4;
-	return packet.read(3);
+    // int64_t pkt = createPacket(1, 2, 3);
+    handle.write_scratch_packets(0, 1, 2, 3);
+    return packet.read(3);
 }
 
 __global__ void bar(SmChannelDeviceHandle* SmChans){
@@ -561,6 +572,8 @@ __global__ void bar(SmChannelDeviceHandle* SmChans){
     SmChans[8].write(7, SmChans[9].read(3));
     SmChans[8].writeWrapper(5, 1, 2, 3, 4);
     SmChans[8].get(1, 2, 3, 4);
+    SmChans[8].write_scratch_packets(0, 1, 2, 3);
+  
 }  
 
 } // namespace mscclpp
